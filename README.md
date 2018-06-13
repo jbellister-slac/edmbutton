@@ -1,0 +1,3 @@
+# edmbutton: A PyDM widget for launching EDM displays.
+
+edmbutton adds PyDMEDMButton to the PyDM widgets.  This button is custom designed for launching EDM displays easily and quickly.  The class starts a single EDM instance in server mode, and button clicks send a command to this EDM server to launch new displays.  By default, clicking the button will find and raise an existing instance of an EDM window, or launch a new one if it doesn't already exist.  Shift-clicking the button will always launch a brand new window.  Macro variables are passed to the file (use the EDM macro syntax, not JSON).
