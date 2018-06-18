@@ -2,7 +2,6 @@ import subprocess
 import os
 import hashlib
 import time
-import functools
 import logging
 import socket
 try:
@@ -12,7 +11,7 @@ except ImportError:
 from pydm.widgets import PyDMRelatedDisplayButton
 from pydm.utilities import is_pydm_app
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 def find_free_socket():
     """
@@ -20,10 +19,10 @@ def find_free_socket():
     Careful, there isn't anything to ensure this socket *stays* usused
     after the method returns, so use it quick.
     """
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(('', 0))
-    addr = s.getsockname()
-    s.close()
+    temp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    temp_sock.bind(('', 0))
+    addr = temp_sock.getsockname()
+    temp_sock.close()
     return addr[1]
 
 class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
@@ -33,7 +32,7 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
     When the user interacts with the button, commands are sent to the EDM server
     to open new windows, or raise existing windows if they are available.
 
-    This class only works on platforms that can run EDM. In some window 
+    This class only works on platforms that can run EDM. In some window
     managers, EDM cannot raise its own windows.  This class can use the
     'wmctrl' tool (http://tripie.sweb.cz/utils/wmctrl/), and the 'wmctrl'
     python module (http://github.com/mattgibbs/wmctrl) to try and work around
@@ -48,11 +47,14 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
 
     @classmethod
     def ensure_server_is_available(cls):
+        """
+        Check if the class-wide EDM server is running.  If not, start one.
+        """
         if is_pydm_app():
             if cls.edm_server_proc is None or cls.edm_server_proc.poll() is not None:
-                logger.info("Starting EDM server process with command '{}'".format(" ".join(cls.edm_command)))
+                LOGGER.info("Starting EDM server process with command '{}'".format(" ".join(cls.edm_command)))
                 cls.edm_server_proc = subprocess.Popen(cls.edm_command)
-            
+
     def __init__(self, parent=None, filename=None):
         super(PyDMEDMDisplayButton, self).__init__(parent, filename)
         self.ensure_server_is_available()
@@ -76,10 +78,10 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         cls.windows = {wname: w for (wname, w) in cls.windows.items() if w.id in open_windows}
 
     def _open_new_window(self, wname, macros):
-	    command = PyDMEDMDisplayButton.edm_command
-	    if macros:
-		command = command + ['-m', macros]
-	    subprocess.Popen(command + ['-open', '{windowname}={filename}'.format(windowname=wname, filename=self.displayFilename)])
+        command = PyDMEDMDisplayButton.edm_command
+        if macros:
+            command = command + ['-m', macros]
+        subprocess.Popen(command + ['-open', '{windowname}={filename}'.format(windowname=wname, filename=self.displayFilename)])
 
     def open_display(self, target=PyDMRelatedDisplayButton.EXISTING_WINDOW):
         """
@@ -143,4 +145,3 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
                 return
             else:
                 PyDMEDMDisplayButton.windows[wname].activate()
-
