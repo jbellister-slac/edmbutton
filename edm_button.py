@@ -2,9 +2,29 @@ import subprocess
 import os
 import hashlib
 import time
-import wmctrl
+import functools
+import logging
+import socket
+try:
+    import wmctrl
+except ImportError:
+    wmctrl = None
 from pydm.widgets import PyDMRelatedDisplayButton
+from pydm.utilities import is_pydm_app
 
+logger = logging.getLogger(__name__)
+
+def find_free_socket():
+    """
+    Reserve an unused socket, release it, and return the socket number.
+    Careful, there isn't anything to ensure this socket *stays* usused
+    after the method returns, so use it quick.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(('', 0))
+    addr = s.getsockname()
+    s.close()
+    return addr[1]
 
 class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
     """
@@ -13,17 +33,29 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
     When the user interacts with the button, commands are sent to the EDM server
     to open new windows, or raise existing windows if they are available.
 
-    This class only works on platforms that can run EDM.  In some window managers,
-    EDM cannot raise its own windows.  This class uses the 'wmctrl' tool
-    (http://tripie.sweb.cz/utils/wmctrl/) to try and work around that problem.
-    If wmctrl is installed and on the PATH, it will be used to raise windows.
-    If it is not detected, all we can do is ask EDM to raise the window for you
-    and hope it works.
+    This class only works on platforms that can run EDM. In some window 
+    managers, EDM cannot raise its own windows.  This class can use the
+    'wmctrl' tool (http://tripie.sweb.cz/utils/wmctrl/), and the 'wmctrl'
+    python module (http://github.com/mattgibbs/wmctrl) to try and work around
+    that problem. If wmctrl is available, it will be used to raise windows.
+    If it is not available, a new EDM window will always be opened on every
+    click.
     """
 
-    edm_command = ['edm', '-server']
-    edm_server_proc = subprocess.Popen(edm_command)
+    edm_command = ['edm', '-server', '-port', str(find_free_socket())]
+    edm_server_proc = None
     windows = {}
+
+    @classmethod
+    def ensure_server_is_available(cls):
+        if is_pydm_app():
+            if cls.edm_server_proc is None or cls.edm_server_proc.poll() is not None:
+                logger.info("Starting EDM server process with command '{}'".format(" ".join(cls.edm_command)))
+                cls.edm_server_proc = subprocess.Popen(cls.edm_command)
+            
+    def __init__(self, parent=None, filename=None):
+        super(PyDMEDMDisplayButton, self).__init__(parent, filename)
+        self.ensure_server_is_available()
 
     def window_name(self):
         """
@@ -35,7 +67,21 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
             window_name += hashlib.md5(self._macro_string).hexdigest()
         return window_name
 
-    def open_display(self, target=PyDMEDMDisplayButton.EXISTING_WINDOW):
+    @classmethod
+    def invalidate_closed_windows(cls):
+        """
+        Clear out any windows that have been closed.
+        """
+        open_windows = {w.id: w for w in wmctrl.Window.list()}
+        cls.windows = {wname: w for (wname, w) in cls.windows.items() if w.id in open_windows}
+
+    def _open_new_window(self, wname, macros):
+	    command = PyDMEDMDisplayButton.edm_command
+	    if macros:
+		command = command + ['-m', macros]
+	    subprocess.Popen(command + ['-open', '{windowname}={filename}'.format(windowname=wname, filename=self.displayFilename)])
+
+    def open_display(self, target=PyDMRelatedDisplayButton.EXISTING_WINDOW):
         """
         Open the configured `filename` with the given `target`.
         If `target` is PyDMEDMDisplayButton.EXISTING_WINDOW, an existing window will
@@ -45,12 +91,18 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         If `target` is PyDMEDMDisplayButton.NEW_WINDOW, a new window will always be
         spawned.
         """
-        #Ensure the EDM server is up and running, if not, restart it.
-        if PyDMEDMDisplayButton.edm_server_proc.poll() is not None:
-            PyDMEDMDisplayButton.edm_server_proc = subprocess.Popen(PyDMEDMDisplayButton.edm_command)
+        self.ensure_server_is_available()
+        wname = self.window_name()
+        if not wmctrl:
+            macros = self._macro_string
+            if macros is None:
+                macros = ""
+            macros = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macros)
+            self._open_new_window(wname, macros)
+            return
+        self.invalidate_closed_windows()
         # Store the window name for the duration of this method to avoid
         # computing hashes repeatedly.
-        wname = self.window_name()
         if not self.displayFilename:
             return
         if target == self.NEW_WINDOW:
@@ -65,21 +117,17 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
                 if macros is None:
                     macros = ""
                 macros = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macros)
-            
             # First we need to get a list of currently open windows
             before_list = {w.id: w for w in wmctrl.Window.list()}
             #Then open up the new one.
-            edm_command = PyDMEDMDisplayButton.edm_command
-            if macros:
-                edm_command.extend(['-m', macros])
-            subprocess.Popen(edm_command.extend(['-open', '{windowname}={filename}'.format(windowname=wname, filename=self.displayFilename)]))
+            self._open_new_window(wname, macros)
             #Then poll the list of open windows until it shows up.
             new_window = None
             start_time = time.time()
             while new_window is None:
                 after_list = wmctrl.Window.list()
                 for win in after_list:
-                    if win.id in before_list:
+                    if win.id not in before_list:
                         new_window = win
                         break
                 end_time = time.time()
@@ -95,13 +143,4 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
                 return
             else:
                 PyDMEDMDisplayButton.windows[wname].activate()
-        #Finally, take a little time to evict closed windows from our dictionary
-        PyDMEDMDisplayButton.invalidate_closed_windows()
 
-    @classmethod
-    def invalidate_closed_windows(cls):
-        """
-        Clear out any windows that have been closed.
-        """
-        open_windows = {w.id: w for w in wmctrl.Window.list()}
-        cls.windows = {wname: w for (wname, w) in w.items() if w.id in open_windows}
