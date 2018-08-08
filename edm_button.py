@@ -8,6 +8,7 @@ try:
     import wmctrl
 except ImportError:
     wmctrl = None
+from pydm.PyQt.QtCore import QSize
 from pydm.widgets import PyDMRelatedDisplayButton
 from pydm.utilities import is_pydm_app
 
@@ -66,7 +67,7 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         """
         window_name = os.path.basename(self.displayFilename)
         if self._macro_string:
-            window_name += hashlib.md5(self._macro_string).hexdigest()
+            window_name += hashlib.md5(self._macro_string).hexdigest()[0:5]
         return window_name
 
     @classmethod
@@ -81,7 +82,8 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         command = PyDMEDMDisplayButton.edm_command
         if macros:
             command = command + ['-m', macros]
-        subprocess.Popen(command + ['-open', '{windowname}={filename}'.format(windowname=wname, filename=self.displayFilename)])
+        full_command = command + ['-open', '{windowname}={filename}'.format(windowname=wname, filename=self.displayFilename)]
+        subprocess.Popen(full_command)
 
     def open_display(self, target=PyDMRelatedDisplayButton.EXISTING_WINDOW):
         """
@@ -145,3 +147,4 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
                 return
             else:
                 PyDMEDMDisplayButton.windows[wname].activate()
+
