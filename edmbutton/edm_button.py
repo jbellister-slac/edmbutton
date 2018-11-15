@@ -8,7 +8,7 @@ try:
     import wmctrl
 except ImportError:
     wmctrl = None
-from pydm.PyQt.QtCore import QSize
+from PyQt5.QtCore import QSize
 from pydm.widgets import PyDMRelatedDisplayButton
 from pydm.utilities import is_pydm_app
 
