@@ -60,14 +60,14 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         super(PyDMEDMDisplayButton, self).__init__(parent, filename)
         self.ensure_server_is_available()
 
-    def window_name(self):
+    def window_name(self, filename, macro_string=""):
         """
         Generates a unique string identifier for this window, using the
         filename and any macros.
         """
-        window_name = os.path.basename(self.displayFilename)
-        if self._macro_string:
-            window_name += hashlib.md5(self._macro_string).hexdigest()[0:5]
+        window_name = os.path.basename(filename)
+        if macro_string:
+            window_name += hashlib.md5(macro_string).hexdigest()[0:5]
         return window_name
 
     @classmethod
@@ -78,14 +78,14 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         open_windows = {w.id: w for w in wmctrl.Window.list()}
         PyDMEDMDisplayButton.windows = {wname: w for (wname, w) in PyDMEDMDisplayButton.windows.items() if w.id in open_windows}
 
-    def _open_new_window(self, wname, macros):
+    def _open_new_window(self, filename, wname, macros):
         command = PyDMEDMDisplayButton.edm_command
         if macros:
             command = command + ['-m', macros]
-        full_command = command + ['-open', '{windowname}={filename}'.format(windowname=wname, filename=self.displayFilename)]
+        full_command = command + ['-open', '{windowname}={filename}'.format(windowname=wname, filename=filename)]
         subprocess.Popen(full_command)
 
-    def open_display(self, target=PyDMRelatedDisplayButton.EXISTING_WINDOW):
+    def open_display(self, filename, macro_string="", target=None):
         """
         Open the configured `filename` with the given `target`.
         If `target` is PyDMEDMDisplayButton.EXISTING_WINDOW, an existing window will
@@ -95,20 +95,24 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         If `target` is PyDMEDMDisplayButton.NEW_WINDOW, a new window will always be
         spawned.
         """
+        if not filename:
+	    return
+        if self._shift_key_was_down:
+            target = self.NEW_WINDOW
+        if target is None:
+            if self._open_in_new_window:
+                target = self.NEW_WINDOW
+            else:
+                target = self.EXISTING_WINDOW
         self.ensure_server_is_available()
-        wname = self.window_name()
-        if not wmctrl:
-            macros = self._macro_string
-            if macros is None:
-                macros = ""
-            macros = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macros)
-            self._open_new_window(wname, macros)
-            return
-        self.invalidate_closed_windows()
         # Store the window name for the duration of this method to avoid
         # computing hashes repeatedly.
-        if not self.displayFilename:
+        wname = self.window_name(filename, macro_string)
+        if not wmctrl:
+            macro_string = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macro_string)
+            self._open_new_window(filename, wname, macro_string)
             return
+        self.invalidate_closed_windows()
         if target == self.NEW_WINDOW:
             # First check if this file is something we've already got open.
             # If it is, our EDM server will refuse to open a new copy.
@@ -116,15 +120,12 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
             # number of the same display as long as you pass different macro
             # variables. So just put some unique nonsense (the current
             # timestamp) into a macro variable in this case.
-            macros = self._macro_string
             if wname in PyDMEDMDisplayButton.windows:
-                if macros is None:
-                    macros = ""
-                macros = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macros)
+                macro_string = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macros_string)
             # First we need to get a list of currently open windows
             before_list = {w.id: w for w in wmctrl.Window.list()}
             #Then open up the new one.
-            self._open_new_window(wname, macros)
+            self._open_new_window(filename, wname, macro_string)
             #Then poll the list of open windows until it shows up.
             new_window = None
             start_time = time.time()
@@ -143,7 +144,7 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
             # First check if this is something we've got in our dictionary of windows.
             # If it isn't, we've got no choice but to open it up as a new one.
             if wname not in PyDMEDMDisplayButton.windows:
-                self.open_display(target=self.NEW_WINDOW)
+                self.open_display(filename, macro_string, target=self.NEW_WINDOW)
                 return
             else:
                 PyDMEDMDisplayButton.windows[wname].activate()
