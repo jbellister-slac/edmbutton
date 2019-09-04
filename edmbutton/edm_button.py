@@ -14,6 +14,13 @@ from pydm.utilities import is_pydm_app
 
 LOGGER = logging.getLogger(__name__)
 
+def find_edm_server_socket():
+    """
+    Search 'ps' output for instances of EDM servers.  If there aren't any,
+    open up a new socket.
+    """
+    pass
+
 def find_free_socket():
     """
     Reserve an unused socket, release it, and return the socket number.
@@ -96,7 +103,10 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         spawned.
         """
         if not filename:
-	    return
+            return
+        if filename.endswith(".ui") or filename.endswith(".py"):
+            super(PyDMEDMDisplayButton, self).open_display(filename, macro_string, target)
+            return
         if self._shift_key_was_down:
             target = self.NEW_WINDOW
         if target is None:
