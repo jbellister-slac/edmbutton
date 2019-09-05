@@ -82,7 +82,10 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         """
         Clear out any windows that have been closed.
         """
-        open_windows = {w.id: w for w in wmctrl.Window.list()}
+        try:
+          open_windows = {w.id: w for w in wmctrl.Window.list()}
+        except:
+          open_windows = {}
         PyDMEDMDisplayButton.windows = {wname: w for (wname, w) in PyDMEDMDisplayButton.windows.items() if w.id in open_windows}
 
     def _open_new_window(self, filename, wname, macros):
