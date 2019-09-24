@@ -65,7 +65,11 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
 
     def __init__(self, parent=None, filename=None):
         super(PyDMEDMDisplayButton, self).__init__(parent, filename)
-        self.ensure_server_is_available()
+        try:
+            self.ensure_server_is_available()
+        except FileNotFoundError:
+            print("EDM was not found.  Disabling EDM buttons.")
+            self.setEnabled(False)
 
     @classmethod
     def window_name(cls, filename, macro_string=""):
