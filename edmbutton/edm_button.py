@@ -6,7 +6,10 @@ import logging
 import socket
 try:
     import wmctrl
-except ImportError:
+    # Next, we have to test that it actually *works*.
+    # (FastX and MobaXTerm both fail to get a window list.)
+    wmctrl.Window.list()
+except (ImportError, CalledProcessError):
     wmctrl = None
 from PyQt5.QtCore import QSize
 from pydm.widgets import PyDMRelatedDisplayButton
@@ -58,18 +61,22 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         """
         Check if the class-wide EDM server is running.  If not, start one.
         """
+        if cls.edm_server_proc is False:
+            return
         if is_pydm_app():
             if cls.edm_server_proc is None or cls.edm_server_proc.poll() is not None:
                 LOGGER.info("Starting EDM server process with command '{}'".format(" ".join(cls.edm_command)))
-                cls.edm_server_proc = subprocess.Popen(cls.edm_command)
+                try:
+                    cls.edm_server_proc = subprocess.Popen(cls.edm_command)
+                except FileNotFoundError as e:
+                    LOGGER.info("EDM was not found.  Disabling EDM buttons.")
+                    cls.edm_server_proc = False
 
     def __init__(self, parent=None, filename=None):
         super(PyDMEDMDisplayButton, self).__init__(parent, filename)
-        try:
-            self.ensure_server_is_available()
-        except FileNotFoundError:
-            print("EDM was not found.  Disabling EDM buttons.")
-            self.setEnabled(False)
+        self.ensure_server_is_available()
+        if PyDMEDMDisplayButton.edm_server_proc == False:
+            self.setEnabled(False)        
 
     @classmethod
     def window_name(cls, filename, macro_string=""):
