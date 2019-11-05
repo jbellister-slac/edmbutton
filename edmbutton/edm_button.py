@@ -9,7 +9,7 @@ try:
     # Next, we have to test that it actually *works*.
     # (FastX and MobaXTerm both fail to get a window list.)
     wmctrl.Window.list()
-except (ImportError, CalledProcessError):
+except (ImportError, subprocess.CalledProcessError):
     wmctrl = None
 from PyQt5.QtCore import QSize
 from pydm.widgets import PyDMRelatedDisplayButton
