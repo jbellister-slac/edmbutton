@@ -11,7 +11,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='edmbutton',
-    version='0.2.0',
+    version='0.2.1',
     description='A PyDM widget for launching EDM displays.',
     long_description=long_description,
 
