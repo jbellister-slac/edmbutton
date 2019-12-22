@@ -67,7 +67,28 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
             if cls.edm_server_proc is None or cls.edm_server_proc.poll() is not None:
                 LOGGER.info("Starting EDM server process with command '{}'".format(" ".join(cls.edm_command)))
                 try:
-                    cls.edm_server_proc = subprocess.Popen(cls.edm_command)
+                    if not wmctrl or not hasattr(wmctrl.Window, 'set_always_on_bottom'):
+                        cls.edm_server_proc = subprocess.Popen(cls.edm_command)
+                    else:
+                        # If wmctrl is availabe, and knows how to send a window to the bottom,
+                        # we look for the stupid EDM postage stamp window, and if we find it,
+                        # we send it to the bottom so that it doesn't overlap with PyDM.
+                        before_list = {w.id: w for w in wmctrl.Window.list()}
+                        cls.edm_server_proc = subprocess.Popen(cls.edm_command)
+                        new_window = None
+                        start_time = time.time()
+                        while new_window is None:
+                            after_list = wmctrl.Window.list()
+                            for win in after_list:
+                                if win.id not in before_list and win.wm_class == 'edm.edm' and win.wm_name.startswith('edm'):
+                                    new_window = win
+                                    break
+                            end_time = time.time()
+                            if end_time - start_time > 5.0:
+                                break
+                        if new_window:
+                            new_window.set_always_on_bottom()
+                            
                 except FileNotFoundError as e:
                     LOGGER.info("EDM was not found.  Disabling EDM buttons.")
                     cls.edm_server_proc = False
