@@ -134,7 +134,7 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
             # variables. So just put some unique nonsense (the current
             # timestamp) into a macro variable in this case.
             if wname in cls.windows:
-                macro_string = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macros_string)
+                macro_string = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macro_string)
             # First we need to get a list of currently open windows
             before_list = {w.id: w for w in wmctrl.Window.list()}
             #Then open up the new one.
