@@ -107,7 +107,7 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         """
         window_name = os.path.basename(filename)
         if macro_string:
-            window_name += hashlib.md5(macro_string).hexdigest()[0:5]
+            window_name += hashlib.md5(macro_string.encode('utf-8')).hexdigest()[0:5]
         return window_name
     
     @classmethod
