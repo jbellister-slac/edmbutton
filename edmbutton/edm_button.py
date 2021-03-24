@@ -117,6 +117,7 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         """
         if not filename:
             return
+        filename = os.path.expanduser(os.path.expandvars(filename))
         cls.ensure_server_is_available()
         # Store the window name for the duration of this method to avoid
         # computing hashes repeatedly.
