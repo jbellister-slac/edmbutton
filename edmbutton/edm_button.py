@@ -4,11 +4,10 @@ import hashlib
 import time
 import logging
 import socket
+import threading
+wmctrl = None
 try:
     import wmctrl
-    # Next, we have to test that it actually *works*.
-    # (FastX and MobaXTerm both fail to get a window list.)
-    wmctrl.Window.list()
 except (ImportError, subprocess.CalledProcessError):
     wmctrl = None
 from PyQt5.QtCore import QSize
@@ -35,6 +34,34 @@ def find_free_socket():
     addr = temp_sock.getsockname()
     temp_sock.close()
     return addr[1]
+
+def initialize_edm_window():
+    # NOTE: This method gets called in a separate thread...
+    try:
+        before_list = {w.id: w for w in wmctrl.Window.list()}
+    except subprocess.CalledProcessError:
+        # If wmctrl fails, it is probably because you're using some horrible X server
+        # that doesn't support retrieving a list of all open windows, like FastX (boooo!).
+        # If that is the case, wmctrl just gets disabled entirely.
+        wmctrl = None
+        return
+    new_window = None
+    start_time = time.time()
+    while new_window is None:
+        try:
+            after_list = wmctrl.Window.list()
+        except subprocess.CalledProcessError:
+            return
+        for win in after_list:
+            if win.id not in before_list and win.wm_class == 'edm.edm' and win.wm_name.startswith('edm'):
+                new_window = win
+                break
+        end_time = time.time()
+        if end_time - start_time > 5.0:
+            break
+    if new_window:
+        new_window.set_always_on_bottom()
+        return 
 
 class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
     """
@@ -69,35 +96,26 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
                 try:
                     if not wmctrl or not hasattr(wmctrl.Window, 'set_always_on_bottom'):
                         cls.edm_server_proc = subprocess.Popen(cls.edm_command)
+                        LOGGER.debug("EDM server process launched.")
                     else:
                         # If wmctrl is availabe, and knows how to send a window to the bottom,
                         # we look for the stupid EDM postage stamp window, and if we find it,
                         # we send it to the bottom so that it doesn't overlap with PyDM.
-                        before_list = {w.id: w for w in wmctrl.Window.list()}
                         cls.edm_server_proc = subprocess.Popen(cls.edm_command)
-                        new_window = None
-                        start_time = time.time()
-                        while new_window is None:
-                            after_list = wmctrl.Window.list()
-                            for win in after_list:
-                                if win.id not in before_list and win.wm_class == 'edm.edm' and win.wm_name.startswith('edm'):
-                                    new_window = win
-                                    break
-                            end_time = time.time()
-                            if end_time - start_time > 5.0:
-                                break
-                        if new_window:
-                            new_window.set_always_on_bottom()
-                            
+                        LOGGER.debug("EDM server process launched.")
+                        t = threading.Thread(target=initialize_edm_window)
+                        t.start()
                 except FileNotFoundError as e:
                     LOGGER.info("EDM was not found.  Disabling EDM buttons.")
                     cls.edm_server_proc = False
+                LOGGER.debug("EDMButton: ensure_server_is_available complete.")
 
     def __init__(self, parent=None, filename=None):
         super(PyDMEDMDisplayButton, self).__init__(parent, filename)
         self.ensure_server_is_available()
         if PyDMEDMDisplayButton.edm_server_proc == False:
             self.setEnabled(False)        
+
 
     @classmethod
     def window_name(cls, filename, macro_string=""):
