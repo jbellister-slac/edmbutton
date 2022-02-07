@@ -5,16 +5,15 @@ import time
 import logging
 import socket
 import threading
-wmctrl = None
 try:
     import wmctrl
 except (ImportError, subprocess.CalledProcessError):
     wmctrl = None
-from PyQt5.QtCore import QSize
 from pydm.widgets import PyDMRelatedDisplayButton
 from pydm.utilities import is_pydm_app
 
 LOGGER = logging.getLogger(__name__)
+
 
 def find_edm_server_socket():
     """
@@ -35,33 +34,6 @@ def find_free_socket():
     temp_sock.close()
     return addr[1]
 
-def initialize_edm_window():
-    # NOTE: This method gets called in a separate thread...
-    try:
-        before_list = {w.id: w for w in wmctrl.Window.list()}
-    except subprocess.CalledProcessError:
-        # If wmctrl fails, it is probably because you're using some horrible X server
-        # that doesn't support retrieving a list of all open windows, like FastX (boooo!).
-        # If that is the case, wmctrl just gets disabled entirely.
-        wmctrl = None
-        return
-    new_window = None
-    start_time = time.time()
-    while new_window is None:
-        try:
-            after_list = wmctrl.Window.list()
-        except subprocess.CalledProcessError:
-            return
-        for win in after_list:
-            if win.id not in before_list and win.wm_class == 'edm.edm' and win.wm_name.startswith('edm'):
-                new_window = win
-                break
-        end_time = time.time()
-        if end_time - start_time > 5.0:
-            break
-    if new_window:
-        new_window.set_always_on_bottom()
-        return 
 
 class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
     """
@@ -81,7 +53,53 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
 
     edm_command = ['edm', '-server', '-port', str(find_free_socket())]
     edm_server_proc = None
+    retcode = subprocess.call(["which", "edm"])
+    if retcode != 0:
+        edm_server_proc = False
+    try:
+        import wmctrl
+        wmctrl_available = True
+    except (ImportError, subprocess.CalledProcessError):
+        wmctrl_available = False
+        LOGGER.debug("Disabling wmctrl support in edmbutton.")
     windows = {}
+
+    @classmethod
+    def initialize_edm_window(cls):
+        # NOTE: This method gets called in a separate thread...
+        try:
+            import wmctrl
+            cls.wmctrl_available = True
+        except (ImportError, subprocess.CalledProcessError):
+            cls.wmctrl_available = False
+            return
+        try:
+            before_list = {w.id: w for w in wmctrl.Window.list()}
+        except subprocess.CalledProcessError:
+            # If wmctrl fails, it is probably because you're using some horrible X server
+            # that doesn't support retrieving a list of all open windows, like FastX (boooo!).
+            # If that is the case, wmctrl just gets disabled entirely.
+            cls.wmctrl_available = False
+            LOGGER.debug("Disabling wmctrl support in edmbutton.")
+            return
+        new_window = None
+        start_time = time.time()
+        while new_window is None:
+            try:
+                after_list = wmctrl.Window.list()
+            except subprocess.CalledProcessError:
+                return
+            for win in after_list:
+                if win.id not in before_list and win.wm_class.decode('utf-8') == 'edm.edm' and win.wm_name.decode('utf-8').startswith('edm'):
+                    new_window = win
+                    break
+            end_time = time.time()
+            if end_time - start_time > 5.0:
+                break
+        if new_window:
+            new_window.set_always_on_bottom()
+            return 
+
 
     @classmethod
     def ensure_server_is_available(cls):
@@ -94,7 +112,7 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
             if cls.edm_server_proc is None or cls.edm_server_proc.poll() is not None:
                 LOGGER.info("Starting EDM server process with command '{}'".format(" ".join(cls.edm_command)))
                 try:
-                    if not wmctrl or not hasattr(wmctrl.Window, 'set_always_on_bottom'):
+                    if not cls.wmctrl_available or not hasattr(wmctrl.Window, 'set_always_on_bottom'):
                         cls.edm_server_proc = subprocess.Popen(cls.edm_command)
                         LOGGER.debug("EDM server process launched.")
                     else:
@@ -103,7 +121,7 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
                         # we send it to the bottom so that it doesn't overlap with PyDM.
                         cls.edm_server_proc = subprocess.Popen(cls.edm_command)
                         LOGGER.debug("EDM server process launched.")
-                        t = threading.Thread(target=initialize_edm_window)
+                        t = threading.Thread(target=cls.initialize_edm_window)
                         t.start()
                 except FileNotFoundError as e:
                     LOGGER.info("EDM was not found.  Disabling EDM buttons.")
@@ -112,7 +130,6 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
 
     def __init__(self, parent=None, filename=None):
         super(PyDMEDMDisplayButton, self).__init__(parent, filename)
-        self.ensure_server_is_available()
         if PyDMEDMDisplayButton.edm_server_proc == False:
             self.setEnabled(False)        
 
@@ -133,6 +150,7 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         """
         Open an EDM display, either in a new window, or an existing one if possible.
         """
+        LOGGER.debug("open_edm_display(filename={}, macro_string={}, in_new_window={})".format(filename, macro_string, in_new_window))
         if not filename:
             return
         filename = os.path.expanduser(os.path.expandvars(filename))
@@ -140,7 +158,7 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         # Store the window name for the duration of this method to avoid
         # computing hashes repeatedly.
         wname = cls.window_name(filename, macro_string)
-        if not wmctrl:
+        if not cls.wmctrl_available:
             macro_string = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macro_string)
             cls._open_new_window(filename, wname, macro_string)
             return
@@ -155,23 +173,30 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
             if wname in cls.windows:
                 macro_string = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macro_string)
             # First we need to get a list of currently open windows
-            before_list = {w.id: w for w in wmctrl.Window.list()}
-            #Then open up the new one.
-            cls._open_new_window(filename, wname, macro_string)
-            #Then poll the list of open windows until it shows up.
-            new_window = None
-            start_time = time.time()
-            while new_window is None:
-                after_list = wmctrl.Window.list()
-                for win in after_list:
-                    if win.id not in before_list:
-                        new_window = win
-                        break
-                end_time = time.time()
-                if end_time - start_time > 5.0:
-                    raise Exception("Timeout expired while trying to launch EDM window.")
-            assert new_window is not None
-            cls.windows[wname] = new_window
+            try:
+                before_list = {w.id: w for w in wmctrl.Window.list()}
+                #Then open up the new one.
+                cls._open_new_window(filename, wname, macro_string)
+                #Then poll the list of open windows until it shows up.
+                new_window = None
+                start_time = time.time()
+                while new_window is None:
+                    after_list = wmctrl.Window.list()
+                    for win in after_list:
+                        if win.id not in before_list and win.wm_class.decode('utf-8') == "edm.edm" and not win.wm_name.decode('utf-8').startswith("edm R1"):
+                            new_window = win
+                            break
+                    end_time = time.time()
+                    if end_time - start_time > 5.0:
+                        raise Exception("Timeout expired while trying to launch EDM window.")
+                assert new_window is not None
+                cls.windows[wname] = new_window
+            except subprocess.CalledProcessError:
+                cls.wmctrl_available = False
+                LOGGER.debug("Disabling wmctrl support in edmbutton.")
+                macro_string = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macro_string)
+                cls._open_new_window(filename, wname, macro_string)
+                return              
         else: #If we're not explicity launching a new window
             # First check if this is something we've got in our dictionary of windows.
             # If it isn't, we've got no choice but to open it up as a new one.
@@ -186,8 +211,17 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
         """
         Clear out any windows that have been closed.
         """
-        open_windows = {w.id: w for w in wmctrl.Window.list()}
-        cls.windows = {wname: w for (wname, w) in cls.windows.items() if w.id in open_windows}
+        if not cls.wmctrl_available:
+            return
+        if len(cls.windows) == 0:
+            return
+        try:
+            open_windows = {w.id: w for w in wmctrl.Window.list()}
+            cls.windows = {wname: w for (wname, w) in cls.windows.items() if w.id in open_windows}
+        except subprocess.CalledProcessError as e:
+            cls.wmctrl_available = False
+            LOGGER.debug("Disabling wmctrl support in edmbutton.")
+            return
     
     @classmethod
     def _open_new_window(cls, filename, wname, macros):
