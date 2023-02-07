@@ -172,25 +172,16 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
             # timestamp) into a macro variable in this case.
             if wname in cls.windows:
                 macro_string = "pydm_dup_workaround={noise},{macros}".format(noise=time.time(), macros=macro_string)
-            # First we need to get a list of currently open windows
+            # Next, we need to get a list of currently open windows
             try:
                 before_list = {w.id: w for w in wmctrl.Window.list()}
                 #Then open up the new one.
                 cls._open_new_window(filename, wname, macro_string)
-                #Then poll the list of open windows until it shows up.
-                new_window = None
-                start_time = time.time()
-                while new_window is None:
-                    after_list = wmctrl.Window.list()
-                    for win in after_list:
-                        if win.id not in before_list and win.wm_class.decode('utf-8') == "edm.edm" and not win.wm_name.decode('utf-8').startswith("edm R1"):
-                            new_window = win
-                            break
-                    end_time = time.time()
-                    if end_time - start_time > 5.0:
-                        raise Exception("Timeout expired while trying to launch EDM window.")
-                assert new_window is not None
-                cls.windows[wname] = new_window
+                # Then poll the list of open windows until it shows up.
+                # Do this in a separate thread.
+                window_finder_thread = threading.Thread(target=cls.wait_for_new_edm_window, args=(wname, before_list))
+                window_finder_thread.start()
+                #cls.wait_for_new_edm_window(wname, before_list)
             except subprocess.CalledProcessError:
                 cls.wmctrl_available = False
                 LOGGER.debug("Disabling wmctrl support in edmbutton.")
@@ -205,6 +196,40 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
                 return
             else:
                 cls.windows[wname].activate()
+
+    @classmethod
+    def wait_for_new_edm_window(cls, wname, before_list):
+        """
+        Poll the list of windows from wmctrl repeatedly until we one that 
+        looks like a new EDM window. Once the window is found, add it to the
+        class' dictionary of windows. 
+        
+        This method is typically called from a separate thread to avoid locking
+        everything up while polling is in progress.
+        """
+        new_window = None
+        start_time = time.time()
+        while new_window is None:
+            after_list = wmctrl.Window.list()
+            for win in after_list:
+                # We want a window that is:
+                # 1. New, not in the list of windows that existed before launching EDM
+                # 2. Has a "wm class" of "edm.edm", which all EDM windows apparently have
+                # 3. Does not have a window name that starts with "edm R1" - 
+                #    these are the "postage stamp" windows.  We want the real display window.
+                # If all of the above are met, we assume it is the window we're looking for.
+                # There's no guarantee, though.  This is just a heuristic.
+                if win.id not in before_list and win.wm_class.decode('utf-8') == "edm.edm" and not win.wm_name.decode('utf-8').startswith("edm R1"):
+                    new_window = win
+                    break
+            end_time = time.time()
+            if end_time - start_time > 10.0:
+                LOGGER.debug("Timeout expired while trying to launch EDM window.")
+                return
+            time.sleep(0.1)
+        assert new_window is not None
+        # We completely rely on the GIL to ensure writing to this dict is safe.
+        cls.windows[wname] = new_window
 
     @classmethod
     def invalidate_closed_windows(cls):
