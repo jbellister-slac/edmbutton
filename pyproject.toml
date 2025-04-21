@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm[toml]"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edmbutton"
+description = "A PyDM widget for launching EDM displays."
+readme = "README.md"
+authors = [ {name = "Matt Gibbs", email="mgibbs@slac.stanford.edu"} ]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent"
+]
+requires-python = ">=3.9"
+dependencies = ["pydm"]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/slaclab/edmbutton"
+
+[project.license]
+file = "LICENSE.md"
+
+[tool.setuptools_scm]
+write_to = "edmbutton/_version.py"
+
+[project.entry-points."pydm.widget"]
+PyDMEDMDisplayButton = "edmbutton.edm_button:PyDMEDMDisplayButton"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["edmbutton*"]
+namespaces = false

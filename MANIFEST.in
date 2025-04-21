@@ -1,4 +1,3 @@
 include README.md
 include LICENSE.md
-include versioneer.py
 include edmbutton/_version.py
