@@ -10,6 +10,8 @@ try:
 except (ImportError, subprocess.CalledProcessError):
     wmctrl = None
 from pydm.widgets import PyDMRelatedDisplayButton
+from pydm.widgets.qtplugin_base import WidgetCategory
+from pydm.widgets.qtplugin_extensions import RulesExtension
 from pydm.utilities import is_pydm_app
 
 LOGGER = logging.getLogger(__name__)
@@ -50,6 +52,13 @@ class PyDMEDMDisplayButton(PyDMRelatedDisplayButton):
     If it is not available, a new EDM window will always be opened on every
     click.
     """
+
+    # Specify settings for Qt Designer support
+    _qt_designer_ = {
+        "group": WidgetCategory.DISPLAY,
+        "is_container": True,
+        "extensions": [RulesExtension],
+    }
 
     edm_command = ['edm', '-server', '-port', str(find_free_socket())]
     edm_server_proc = None
