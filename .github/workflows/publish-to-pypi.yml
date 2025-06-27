@@ -39,6 +39,7 @@ jobs:
         retention-days: 1
 
   publish:
+    needs: build
     if: ${{ github.repository == 'jbellister-slac/edmbutton' }}
     name: Publish release to PyPI
     runs-on: ubuntu-latest
