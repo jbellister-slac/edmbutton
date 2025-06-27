@@ -8,10 +8,9 @@ on:
   release:
     types:
       - published
-  workflow_dispatch:
 jobs:
   build:
-    if: ${{ github.repository == 'jbellister-slac/edmbutton' }}
+    if: ${{ github.repository == 'slaclab/edmbutton' }}
     name: Build new release
     runs-on: ubuntu-latest
 
@@ -40,7 +39,7 @@ jobs:
 
   publish:
     needs: build
-    if: ${{ github.repository == 'jbellister-slac/edmbutton' }}
+    if: ${{ github.repository == 'slaclab/edmbutton' }}
     name: Publish release to PyPI
     runs-on: ubuntu-latest
     permissions:
